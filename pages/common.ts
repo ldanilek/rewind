@@ -9,8 +9,8 @@ export enum GameObjectType {
 }
 
 export type SensorTarget = {
-  objectIndex: number,
   // For now all targets disappear while the sensor is triggered, and reappear after.
+  objectIndices: number[],
 }
 
 export type GameObject = {
@@ -177,34 +177,37 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
   };
   let triggeredGoals = 0;
   let allGoals = 0;
-  updatedObjects.forEach((object, index) => {
+  updatedObjects.forEach((object) => {
     if (object.objectType === GameObjectType.Sensor || object.objectType === GameObjectType.Goal) {
       let triggered = false;
-      for(let maybePlayer of updatedObjects) {
-        if (maybePlayer.objectType === GameObjectType.Player || maybePlayer.objectType === GameObjectType.FormerPlayer) {
-          if (object.locationX === maybePlayer.locationX && object.locationY === maybePlayer.locationY) {
-            triggered = true;
+      if (object.locationX !== null && object.locationY !== null) {
+        for(let maybePlayer of updatedObjects) {
+          if (maybePlayer.objectType === GameObjectType.Player || maybePlayer.objectType === GameObjectType.FormerPlayer) {
+            if (object.locationX === maybePlayer.locationX && object.locationY === maybePlayer.locationY) {
+              triggered = true;
+            }
           }
         }
       }
 
       if (object.objectType === GameObjectType.Sensor) {
-        const targetIndex = object.sensorTarget!.objectIndex;
-        const targetObject = updatedObjects[targetIndex];
-        if (triggered) {
-          updatedObjects[targetIndex] = {
-            ...targetObject,
-            locationX: null,
-            locationY: null,
-            formerX: targetObject.formerX !== undefined ? targetObject.formerX : targetObject.locationX,
-            formerY: targetObject.formerY !== undefined ? targetObject.formerY : targetObject.locationY,
-          };
-        } else if (targetObject.formerX !== undefined && targetObject.formerY !== undefined) {
-          updatedObjects[targetIndex] = {
-            ...targetObject,
-            locationX: targetObject.formerX,
-            locationY: targetObject.formerY,
-          };
+        for (let targetIndex of object.sensorTarget!.objectIndices) {
+          const targetObject = updatedObjects[targetIndex];
+          if (triggered) {
+            updatedObjects[targetIndex] = {
+              ...targetObject,
+              locationX: null,
+              locationY: null,
+              formerX: targetObject.formerX !== undefined ? targetObject.formerX : targetObject.locationX,
+              formerY: targetObject.formerY !== undefined ? targetObject.formerY : targetObject.locationY,
+            };
+          } else if (targetObject.formerX !== undefined && targetObject.formerY !== undefined) {
+            updatedObjects[targetIndex] = {
+              ...targetObject,
+              locationX: targetObject.formerX,
+              locationY: targetObject.formerY,
+            };
+          }
         }
       } else if (object.objectType === GameObjectType.Goal) {
         allGoals++;
@@ -277,11 +280,11 @@ export const gameConfigForLevel = ((): Map<number, GameConfig> => {
     locationX: x,
     locationY: y,
   });
-  const sensor = (x: number, y: number, target: number): GameObject => ({
+  const sensor = (x: number, y: number, ...targets: number[]): GameObject => ({
     objectType: GameObjectType.Sensor,
     locationX: x,
     locationY: y,
-    sensorTarget: {objectIndex: target},
+    sensorTarget: {objectIndices: targets},
   });
 
   // Partial wall.

@@ -60,7 +60,7 @@ const drawGameState = (state: GameState, ctx: any) => {
   ctx.fillText(`${state.rewindsRemaining} rewind${state.rewindsRemaining !== 1 ? "s" : ""} remaining`, 10, 440);
 };
 
-const RewindCanvas = ({ level }) => {
+const RewindCanvas = ({ level }: {level: number}) => {
   const canvasRef = useRef<any>(null);
   const [currentTime, setCurrentTime] = useState((new Date()).getTime());
   const gameState = useQuery("getGame", "", level, currentTime);
