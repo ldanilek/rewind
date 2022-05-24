@@ -40,23 +40,26 @@ export enum Operation {
 }
 
 export type PlayerMove = {
+  _id: Id,
+  gameId: Id,
+  playerIndex: number,
   millisSinceStart: number,
   operation: Operation,
 };
 
-export type PlayerSequence = {
-  moves: Array<PlayerMove>,
-};
-
 export type InternalGameState = {
   _id: Id,
+  level: number,
   // From Date.getTime(); Necessary because Convex doesn't support Date.
   latestRewindTime: number,
+  currentPlayerIndex: number,
+};
+
+export type GameConfig = {
   // Excluding players
   initialObjects: Array<GameObject>,
   playerStartX: number,
   playerStartY: number,
-  playerMoves: Array<PlayerSequence>,
 };
 
 const dvorak = false;
@@ -160,7 +163,6 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
       newY = player.locationY;
       break;
     case OperationResult.Win:
-      completion = "You Win!";
       break;
     default:
       throw Error("unexpected result");
@@ -171,35 +173,48 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
     locationX: newX,
     locationY: newY,
   };
+  let triggeredGoals = 0;
+  let allGoals = 0;
   updatedObjects.forEach((object, index) => {
-    if (object.objectType === GameObjectType.Sensor) {
-      let sensorTriggered = false;
+    if (object.objectType === GameObjectType.Sensor || object.objectType === GameObjectType.Goal) {
+      let triggered = false;
       for(let maybePlayer of updatedObjects) {
         if (maybePlayer.objectType === GameObjectType.Player || maybePlayer.objectType === GameObjectType.FormerPlayer) {
           if (object.locationX === maybePlayer.locationX && object.locationY === maybePlayer.locationY) {
-            sensorTriggered = true;
+            triggered = true;
           }
         }
       }
-      const targetIndex = object.sensorTarget!.objectIndex;
-      const targetObject = updatedObjects[targetIndex];
-      if (sensorTriggered) {
-        updatedObjects[targetIndex] = {
-          ...targetObject,
-          locationX: null,
-          locationY: null,
-          formerX: targetObject.formerX !== undefined ? targetObject.formerX : targetObject.locationX,
-          formerY: targetObject.formerY !== undefined ? targetObject.formerY : targetObject.locationY,
-        };
-      } else if (targetObject.formerX !== undefined && targetObject.formerY !== undefined) {
-        updatedObjects[targetIndex] = {
-          ...targetObject,
-          locationX: targetObject.formerX,
-          locationY: targetObject.formerY,
-        };
+
+      if (object.objectType === GameObjectType.Sensor) {
+        const targetIndex = object.sensorTarget!.objectIndex;
+        const targetObject = updatedObjects[targetIndex];
+        if (triggered) {
+          updatedObjects[targetIndex] = {
+            ...targetObject,
+            locationX: null,
+            locationY: null,
+            formerX: targetObject.formerX !== undefined ? targetObject.formerX : targetObject.locationX,
+            formerY: targetObject.formerY !== undefined ? targetObject.formerY : targetObject.locationY,
+          };
+        } else if (targetObject.formerX !== undefined && targetObject.formerY !== undefined) {
+          updatedObjects[targetIndex] = {
+            ...targetObject,
+            locationX: targetObject.formerX,
+            locationY: targetObject.formerY,
+          };
+        }
+      } else if (object.objectType === GameObjectType.Goal) {
+        allGoals++;
+        if (triggered) {
+          triggeredGoals++;
+        }
       }
     }
   });
+  if (allGoals > 0 && allGoals === triggeredGoals) {
+    completion = "You Win!";
+  }
   return {
     ...gameState,
     objects: updatedObjects,
@@ -207,93 +222,113 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
   };
 };
 
-export const computeGameState = (game: InternalGameState, atTime: number): GameState => {
-  const currentMillisSinceStart = atTime - game.latestRewindTime;
-  let objects = game.initialObjects.slice();
+export const computeGameState = (game: InternalGameState, moves: PlayerMove[], nextTime: number | null): GameState => {
+  const config = getConfig(game.level);
+  let objects = config.initialObjects.slice();
   const playerIndexOffset = objects.length;
-  for (let playerIndex = 0; playerIndex < game.playerMoves.length-1; playerIndex++) {
+  for (let playerIndex = 0; playerIndex < game.currentPlayerIndex; playerIndex++) {
     objects.push({
       objectType: GameObjectType.FormerPlayer,
-      locationX: game.playerStartX,
-      locationY: game.playerStartY,
+      locationX: config.playerStartX,
+      locationY: config.playerStartY,
     });
   }
   objects.push({
     objectType: GameObjectType.Player,
-    locationX: game.playerStartX,
-    locationY: game.playerStartY,
+    locationX: config.playerStartX,
+    locationY: config.playerStartY,
   })
   let gameState: GameState = {
     objects,
-    nextTime: null,
+    nextTime,
     completionMessage: null,
   };
+  // Moves should already be sorted by time.
   // Sort moves by time.
   // TODO: do this in the database by storing moves in a separate table.
-  const allMoves = game.playerMoves.flatMap((sequence, playerIndex) => sequence.moves.map((move) => ({
-    ...move,
-    playerIndex: playerIndex+playerIndexOffset,
-  })));
-  allMoves.sort((a, b) => (a.millisSinceStart > b.millisSinceStart) ? 1 : -1);
-
-  for (let move of allMoves) {
-    if (move.millisSinceStart <= currentMillisSinceStart) {
-      gameState = navigateInGame(gameState, move.playerIndex, move.operation);
-    } else {
-      gameState.nextTime = game.latestRewindTime + move.millisSinceStart;
-      break;
-    }
+  for (let move of moves) {
+    let playerIndex = move.playerIndex + playerIndexOffset;
+    gameState = navigateInGame(gameState, playerIndex, move.operation);
   }
   return gameState;
 }
 
 export const initialGameState = (level: number): InternalGameState => {
-  let initialObjects: GameObject[] = [];
   // NOTE: needs to be "any" because there's no valid value for `_id`
   let state: any = {
+    level,
     latestRewindTime: (new Date()).getTime(),
-    initialObjects,
-    playerStartX: 0,
-    playerStartY: 0,
-    playerMoves: [{moves: []}],
+    currentPlayerIndex: 0,
   };
-
-  switch (level) {
-    case 1:
-      initialObjects.push({
-        objectType: GameObjectType.Goal,
-        locationX: 5,
-        locationY: 5,
-      });
-      for (let i = 0; i < 14; i++) {
-        initialObjects.push({
-          objectType: GameObjectType.Obstacle,
-          locationX: 3,
-          locationY: i,
-        });
-      }
-      break;
-
-    case 2:
-      initialObjects.push({
-        objectType: GameObjectType.Goal,
-        locationX: 5,
-        locationY: 5,
-      });
-      for (let i = 0; i < 15; i++) {
-        initialObjects.push({
-          objectType: GameObjectType.Obstacle,
-          locationX: 3,
-          locationY: i,
-        });
-      }
-      initialObjects.push({
-        objectType: GameObjectType.Sensor,
-        locationX: 1,
-        locationY: 13,
-        sensorTarget: {objectIndex: 6},
-      });
-      break;
-  }
   return state;
-};
+}
+
+export const gameConfigForLevel = ((): Map<number, GameConfig> => {
+  // Partial wall.
+  let objects1: GameObject[] = [];
+  objects1.push({
+    objectType: GameObjectType.Goal,
+    locationX: 5,
+    locationY: 5,
+  });
+  for (let i = 0; i < 14; i++) {
+    objects1.push({
+      objectType: GameObjectType.Obstacle,
+      locationX: 3,
+      locationY: i,
+    });
+  }
+
+  // Full wall with a sensor that opens a hole.
+  let objects2: GameObject[] = [];
+  objects2.push({
+    objectType: GameObjectType.Goal,
+    locationX: 5,
+    locationY: 5,
+  });
+  for (let i = 0; i < 15; i++) {
+    objects2.push({
+      objectType: GameObjectType.Obstacle,
+      locationX: 3,
+      locationY: i,
+    });
+  }
+  objects2.push({
+    objectType: GameObjectType.Sensor,
+    locationX: 1,
+    locationY: 13,
+    sensorTarget: {objectIndex: 6},
+  });
+
+  // Partial wall and Two goals
+  let objects3: GameObject[] = [];
+  objects3.push({
+    objectType: GameObjectType.Goal,
+    locationX: 5,
+    locationY: 5,
+  }, {
+    objectType: GameObjectType.Goal,
+    locationX: 10,
+    locationY: 3,
+  });
+  for (let i = 0; i < 14; i++) {
+    objects3.push({
+      objectType: GameObjectType.Obstacle,
+      locationX: 3,
+      locationY: i,
+    });
+  }
+  return new Map([
+    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0}],
+    [2, {initialObjects: objects2, playerStartX: 0, playerStartY: 0}],
+    [3, {initialObjects: objects3, playerStartX: 0, playerStartY: 0}],
+  ]);
+})();
+
+const getConfig = (level: number): GameConfig => {
+  const config = gameConfigForLevel.get(level);
+  if (config) {
+    return config;
+  }
+  return {playerStartX: 0, playerStartY: 0, initialObjects: []};
+}
