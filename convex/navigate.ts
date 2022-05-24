@@ -1,6 +1,6 @@
 import { mutation } from "convex-dev/server";
 import { Id } from "convex-dev/values";
-import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState, getConfig } from "../pages/common";
+import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState, getConfig } from "../common";
 
 export default mutation(async ({ db }, operation: Operation): Promise<number> => {
   const currentTime = new Date();

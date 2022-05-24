@@ -3,7 +3,7 @@ import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
 import React, { useRef, useEffect, useState } from 'react'
-import {GameObjectType, GameObject, GameState, navigateInGame, keyCodeToOperation, Operation, maxX, maxY} from "./common";
+import {GameObjectType, GameObject, GameState, navigateInGame, keyCodeToOperation, Operation, maxX, maxY} from "../common";
 import { useQuery, useMutation, useConvex } from "../convex/_generated";
 
 import { ConvexProvider, ConvexReactClient } from "convex-dev/react";

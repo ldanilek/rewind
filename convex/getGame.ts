@@ -1,5 +1,5 @@
 import { query } from "convex-dev/server";
-import { computeGameState, GameState, initialGameState, InternalGameState, PlayerMove } from "../pages/common";
+import { computeGameState, GameState, initialGameState, InternalGameState, PlayerMove } from "../common";
 
 // Returns the GameState to render and the next timestamp where something will happen.
 export default query(async ({ db }, title: string, level: number, atTime: number): Promise<GameState | null> => {
