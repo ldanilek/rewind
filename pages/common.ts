@@ -29,6 +29,7 @@ export type GameState = {
   // Server-computed true time. Wait until this time to fetch new game state.
   nextTime: number | null,
   completionMessage: string | null,
+  rewindsRemaining: number,
 };
 
 export enum Operation {
@@ -60,6 +61,7 @@ export type GameConfig = {
   initialObjects: Array<GameObject>,
   playerStartX: number,
   playerStartY: number,
+  maxRewinds: number,
 };
 
 const dvorak = false;
@@ -242,6 +244,7 @@ export const computeGameState = (game: InternalGameState, moves: PlayerMove[], n
     objects,
     nextTime,
     completionMessage: null,
+    rewindsRemaining: config.maxRewinds - game.currentPlayerIndex,
   };
   // Moves should already be sorted by time.
   // Sort moves by time.
@@ -264,71 +267,84 @@ export const initialGameState = (level: number): InternalGameState => {
 }
 
 export const gameConfigForLevel = ((): Map<number, GameConfig> => {
+  const obstacle = (x: number, y: number): GameObject => ({
+    objectType: GameObjectType.Obstacle,
+    locationX: x,
+    locationY: y,
+  });
+  const goal = (x: number, y: number): GameObject => ({
+    objectType: GameObjectType.Goal,
+    locationX: x,
+    locationY: y,
+  });
+  const sensor = (x: number, y: number, target: number): GameObject => ({
+    objectType: GameObjectType.Sensor,
+    locationX: x,
+    locationY: y,
+    sensorTarget: {objectIndex: target},
+  });
+
   // Partial wall.
   let objects1: GameObject[] = [];
-  objects1.push({
-    objectType: GameObjectType.Goal,
-    locationX: 5,
-    locationY: 5,
-  });
+  objects1.push(goal(5, 5));
   for (let i = 0; i < 14; i++) {
-    objects1.push({
-      objectType: GameObjectType.Obstacle,
-      locationX: 3,
-      locationY: i,
-    });
+    objects1.push(obstacle(3, i));
   }
 
   // Full wall with a sensor that opens a hole.
   let objects2: GameObject[] = [];
-  objects2.push({
-    objectType: GameObjectType.Goal,
-    locationX: 5,
-    locationY: 5,
-  });
+  objects2.push(goal(5, 5));
   for (let i = 0; i < 15; i++) {
-    objects2.push({
-      objectType: GameObjectType.Obstacle,
-      locationX: 3,
-      locationY: i,
-    });
+    objects2.push(obstacle(3, i));
   }
-  objects2.push({
-    objectType: GameObjectType.Sensor,
-    locationX: 1,
-    locationY: 13,
-    sensorTarget: {objectIndex: 6},
-  });
+  objects2.push(sensor(1, 13, 6));
 
   // Partial wall and Two goals
   let objects3: GameObject[] = [];
-  objects3.push({
-    objectType: GameObjectType.Goal,
-    locationX: 5,
-    locationY: 5,
-  }, {
-    objectType: GameObjectType.Goal,
-    locationX: 10,
-    locationY: 3,
-  });
+  objects3.push(goal(5, 5), goal(10, 3));
   for (let i = 0; i < 14; i++) {
-    objects3.push({
-      objectType: GameObjectType.Obstacle,
-      locationX: 3,
-      locationY: i,
-    });
+    objects3.push(obstacle(3, i));
   }
-  return new Map([
-    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0}],
-    [2, {initialObjects: objects2, playerStartX: 0, playerStartY: 0}],
-    [3, {initialObjects: objects3, playerStartX: 0, playerStartY: 0}],
+
+  // Enclosed goal with multiple doors.
+  const objects4: GameObject[] = [
+    obstacle(4, 4),
+    obstacle(4, 5),
+    obstacle(4, 6),
+    obstacle(5, 4),
+    goal(5, 5),
+    obstacle(5, 6), // 5
+    obstacle(6, 4),
+    obstacle(6, 5),
+    obstacle(6, 6),
+    obstacle(7, 4),
+    obstacle(7, 5), // 10
+    obstacle(7, 6),
+    obstacle(8, 4),
+    obstacle(8, 5),
+    obstacle(8, 6),
+    sensor(3, 13, 7), // 15
+    sensor(7, 13, 10),
+    sensor(11, 13, 13),
+  ];
+
+  let objects6 = objects2.slice();
+  objects6.push(goal(2, 0));
+
+  return new Map<number, GameConfig>([
+    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
+    [2, {initialObjects: objects2, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
+    [3, {initialObjects: objects3, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
+    [4, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 10}],
+    [5, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 1}],
+    [6, {initialObjects: objects6, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
   ]);
 })();
 
-const getConfig = (level: number): GameConfig => {
+export const getConfig = (level: number): GameConfig => {
   const config = gameConfigForLevel.get(level);
   if (config) {
     return config;
   }
-  return {playerStartX: 0, playerStartY: 0, initialObjects: []};
+  return {playerStartX: 0, playerStartY: 0, initialObjects: [], maxRewinds: 1000};
 }

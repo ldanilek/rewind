@@ -51,11 +51,13 @@ const drawGameState = (state: GameState, ctx: any) => {
   for (let object of state.objects) {
     drawGameObject(object, ctx);
   }
+  ctx.fillStyle = "white";
   if (state.completionMessage) {
     ctx.font = "30px Arial";
-    ctx.fillStyle = "white";
     ctx.fillText(state.completionMessage, 130, 50);
   }
+  ctx.font = "12px Arial";
+  ctx.fillText(`${state.rewindsRemaining} rewind${state.rewindsRemaining !== 1 ? "s" : ""} remaining`, 10, 440);
 };
 
 const RewindCanvas = ({ level }) => {
@@ -68,6 +70,9 @@ const RewindCanvas = ({ level }) => {
       console.log(currentTime);
       const currentGameState = localStore.getQuery("getGame", ["", level, currentTime])!;
       if (currentGameState) {
+        if (currentGameState.rewindsRemaining === 0 && operation === Operation.Rewind) {
+          return;
+        }
         localStore.setQuery("getGame", ["", level, currentTime], navigateInGame(currentGameState, currentGameState.objects.length-1, operation));
       }
     }

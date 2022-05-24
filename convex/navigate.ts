@@ -1,11 +1,16 @@
 import { mutation } from "convex-dev/server";
 import { Id } from "convex-dev/values";
-import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState } from "../pages/common";
+import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState, getConfig } from "../pages/common";
 
 export default mutation(async ({ db }, operation: Operation): Promise<number> => {
   const currentTime = new Date();
   const gameState: InternalGameState | null = await db.table("games").order("desc").first();
   if (!gameState) {
+    return currentTime.getTime();
+  }
+  const config = getConfig(gameState.level);
+  if (operation === Operation.Rewind && config.maxRewinds === gameState.currentPlayerIndex) {
+    console.log("no more rewinds");
     return currentTime.getTime();
   }
   console.log("Navigating with operation", operation);
