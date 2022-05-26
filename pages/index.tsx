@@ -3,7 +3,7 @@ import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
 import React, { useRef, useEffect, useState } from 'react'
-import {GameObjectType, GameObject, GameState, navigateInGame, keyCodeToOperation, Operation, maxX, maxY} from "../common";
+import {GameObjectType, GameObject, GameState, navigateInGame, keyCodeToOperation, Operation, maxX, maxY, GameMetadata} from "../common";
 import { useQuery, useMutation, useConvex } from "../convex/_generated";
 import { Auth0Provider } from "@auth0/auth0-react";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -50,7 +50,7 @@ const drawGameObject = (obj: GameObject, ctx: any) => {
   ctx.fillRect(x * size, y * size, size, size);
 };
 
-const drawGameState = (state: GameState, ctx: any) => {
+const drawGameState = (state: GameState, metadata: GameMetadata, ctx: any) => {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = "gray";
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -63,23 +63,25 @@ const drawGameState = (state: GameState, ctx: any) => {
     ctx.fillText(state.completionMessage, 130, 50);
   }
   ctx.font = "12px Arial";
-  ctx.fillText(`${state.rewindsRemaining} rewind${state.rewindsRemaining !== 1 ? "s" : ""} remaining`, 10, 440);
+  ctx.fillText(`${metadata.rewindsRemaining} rewind${metadata.rewindsRemaining !== 1 ? "s" : ""} remaining`, 10, 440);
 };
 
 const RewindCanvas = ({ level }: {level: number}) => {
   const canvasRef = useRef<any>(null);
   const [currentTime, setCurrentTime] = useState((new Date()).getTime());
-  const gameState = useQuery("getGame", "", level, currentTime);
+  const gameState = useQuery("getGame", currentTime);
+  const gameMetadata = useQuery("getGameMetadata");
   const createGame = useMutation("reset");
   const navigate = useMutation("navigate").withOptimisticUpdate(
     (localStore, operation) => {
       console.log(currentTime);
-      const currentGameState = localStore.getQuery("getGame", ["", level, currentTime])!;
-      if (currentGameState) {
-        if (currentGameState.rewindsRemaining === 0 && operation === Operation.Rewind) {
+      const currentGameState = localStore.getQuery("getGame", [currentTime])!;
+      const currentGameMetadata = localStore.getQuery("getGameMetadata", [])!;
+      if (currentGameState && currentGameMetadata) {
+        if (currentGameMetadata.rewindsRemaining === 0 && operation === Operation.Rewind) {
           return;
         }
-        localStore.setQuery("getGame", ["", level, currentTime], navigateInGame(currentGameState, currentGameState.objects.length-1, operation));
+        localStore.setQuery("getGame", [currentTime], navigateInGame(currentGameState, currentGameState.objects.length-1, operation));
       }
     }
   );
@@ -99,11 +101,11 @@ const RewindCanvas = ({ level }: {level: number}) => {
 
   console.log(gameState);
   useEffect(() => {
-    if (gameState) {
+    if (gameState && gameMetadata) {
       const canvas = canvasRef.current;
       if (canvas) {
         const context = canvas.getContext('2d');
-        drawGameState(gameState, context);
+        drawGameState(gameState, gameMetadata, context);
         const nextTime = gameState.nextTime;
         if (nextTime && nextTime !== currentTime) {
           setTimeout(() => {
@@ -146,7 +148,13 @@ const RewindCanvas = ({ level }: {level: number}) => {
 };
 
 const RewindGame = () => {
+  const gameMetadata = useQuery("getGameMetadata");
   const [level, setLevel] = useState(1);
+  useEffect(() => {
+    if (gameMetadata) {
+      setLevel(gameMetadata.level);
+    }
+  }, [gameMetadata]);
   const reset = useMutation("reset");
   const handleReset = () => {
     reset(level);

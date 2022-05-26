@@ -36,7 +36,12 @@ export type GameState = {
   // Server-computed true time. Wait until this time to fetch new game state.
   nextTime: number | null,
   completionMessage: string | null,
+};
+
+// Not dependent on current time.
+export type GameMetadata = {
   rewindsRemaining: number,
+  level: number,
 };
 
 export enum Operation {
@@ -255,7 +260,6 @@ export const computeGameState = (game: InternalGameState, moves: PlayerMove[], n
     objects,
     nextTime,
     completionMessage: null,
-    rewindsRemaining: config.maxRewinds - game.currentPlayerIndex,
   };
   // Moves should already be sorted by time.
   // Sort moves by time.

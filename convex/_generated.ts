@@ -3,6 +3,7 @@
 // based on the contents of this directory.
 // To regenerate, run `convex codegen`.
 import type getGame from "./getGame";
+import type getGameMetadata from "./getGameMetadata";
 import type navigate from "./navigate";
 import type reset from "./reset";
 import type storeUser from "./storeUser";
@@ -37,6 +38,7 @@ type ClientQuery<F extends (first: QueryCtx, ...args: any) => any> = (
 export type ConvexAPI = {
   queries: {
     getGame: ClientQuery<typeof getGame>;
+    getGameMetadata: ClientQuery<typeof getGameMetadata>;
   };
   mutations: {
     navigate: ClientMutation<typeof navigate>;
