@@ -8,6 +8,7 @@ import { useQuery, useMutation, useConvex } from "../convex/_generated";
 
 import { ConvexProvider, ConvexReactClient } from "convex-dev/react";
 import convexConfig from "../convex.json";
+import { Canvas } from '../canvas'
 
 const convex = new ConvexReactClient(convexConfig.origin);
 
@@ -135,7 +136,7 @@ const RewindCanvas = ({ level }: {level: number}) => {
   });
 
   return <div>
-    <canvas ref={canvasRef} width={maxX * size} height={maxY * size} />
+    <Canvas ref={canvasRef} width={maxX * size} height={maxY * size} />
   </div>;
 };
 
