@@ -4,12 +4,12 @@ Write your convex functions in this directory.
 
 A query function (how you read data) looks like this:
 
-```
+```typescript
 // getCounter.ts
 import { query } from "convex-dev/server";
 
 export default query(async ({ db }): Promise<number> => {
-  let counterDoc = await db.table("counter_table").first();
+  const counterDoc = await db.table("counter_table").first();
   console.log("Got stuff");
   if (counterDoc === null) {
     return 0;
@@ -20,11 +20,11 @@ export default query(async ({ db }): Promise<number> => {
 
 A mutation function (how you write data) looks like this:
 
-```
+```typescript
 // incrementCounter.ts
 import { mutation } from "convex-dev/server";
 
-export default mutation(({ db }, increment: number) => {
+export default mutation(async ({ db }, increment: number) => {
   let counterDoc = await db.table("counter_table").first();
   if (counterDoc === null) {
     counterDoc = {

@@ -1,12 +1,13 @@
 import { query } from "convex-dev/server";
-import { computeGameState, GameState, initialGameState, InternalGameState, PlayerMove } from "../common";
+import { computeGameState, GameState, getGame, getUser, initialGameState, InternalGameState, PlayerMove } from "../common";
 
 // Returns the GameState to render and the next timestamp where something will happen.
-export default query(async ({ db }, title: string, level: number, atTime: number): Promise<GameState | null> => {
+export default query(async ({ db, auth }, title: string, level: number, atTime: number): Promise<GameState | null> => {
+  const user = await getUser(db, auth);
   // Order is by creation time, so the first in descending order is most recent.
-  let game: InternalGameState = await db.table("games").order("desc").first();
+  let game = await getGame(db, user);
   if (!game) {
-    game = initialGameState(level);
+    return null;
   }
   const currentMillisSinceStart = atTime - game.latestRewindTime;
   let moves: PlayerMove[] = await db
@@ -31,6 +32,6 @@ export default query(async ({ db }, title: string, level: number, atTime: number
     console.log("fetching game");
     return computeGameState(game, moves, nextTime);
   } catch (error) {
-    return computeGameState(initialGameState(level), [], null);
+    return null;
   }
 });

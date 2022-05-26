@@ -1,4 +1,11 @@
 import {Id} from "convex-dev/values"
+import { DatabaseReader, Auth } from "convex-dev/server";
+
+export type User = {
+  _id: Id;
+  name: string;
+  tokenIdentifier: string;
+};
 
 export enum GameObjectType {
   Player = 1,
@@ -50,6 +57,7 @@ export type PlayerMove = {
 
 export type InternalGameState = {
   _id: Id,
+  userId: Id,
   level: number,
   // From Date.getTime(); Necessary because Convex doesn't support Date.
   latestRewindTime: number,
@@ -259,9 +267,10 @@ export const computeGameState = (game: InternalGameState, moves: PlayerMove[], n
   return gameState;
 }
 
-export const initialGameState = (level: number): InternalGameState => {
+export const initialGameState = (level: number, userId: Id): InternalGameState => {
   // NOTE: needs to be "any" because there's no valid value for `_id`
   let state: any = {
+    userId,
     level,
     latestRewindTime: (new Date()).getTime(),
     currentPlayerIndex: 0,
@@ -350,4 +359,22 @@ export const getConfig = (level: number): GameConfig => {
     return config;
   }
   return {playerStartX: 0, playerStartY: 0, initialObjects: [], maxRewinds: 1000};
+}
+
+export const getUser = async (db: DatabaseReader, auth: Auth): Promise<User> => {
+  const identity = await auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthenticated call to reset");
+  }
+  const user = await db
+    .table("users")
+    .filter(q => q.eq(q.field("tokenIdentifier"), identity.tokenIdentifier))
+    .unique();
+  return user;
+};
+
+export const getGame = async (db: DatabaseReader, user: User): Promise<InternalGameState | null> => {
+  return await db.table("games").order("desc").filter(
+    q => q.eq(q.field("userId"), user._id)
+  ).first();
 }

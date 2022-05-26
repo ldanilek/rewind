@@ -1,10 +1,11 @@
 import { mutation } from "convex-dev/server";
 import { Id } from "convex-dev/values";
-import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState, getConfig } from "../common";
+import { GameState, navigateInGame, keyCodeToOperation, Operation, InternalGameState, getConfig, getUser, getGame } from "../common";
 
-export default mutation(async ({ db }, operation: Operation): Promise<number> => {
+export default mutation(async ({ db, auth }, operation: Operation): Promise<number> => {
+  const user = await getUser(db, auth);
   const currentTime = new Date();
-  const gameState: InternalGameState | null = await db.table("games").order("desc").first();
+  const gameState = await getGame(db, user);
   if (!gameState) {
     return currentTime.getTime();
   }

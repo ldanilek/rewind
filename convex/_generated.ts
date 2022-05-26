@@ -5,6 +5,7 @@
 import type getGame from "./getGame";
 import type navigate from "./navigate";
 import type reset from "./reset";
+import type storeUser from "./storeUser";
 
 // This jumpstarts TypeScript completion of the convex-dev/values entry point.
 import type { Id } from "convex-dev/values";
@@ -40,6 +41,7 @@ export type ConvexAPI = {
   mutations: {
     navigate: ClientMutation<typeof navigate>;
     reset: ClientMutation<typeof reset>;
+    storeUser: ClientMutation<typeof storeUser>;
   };
 };
 
