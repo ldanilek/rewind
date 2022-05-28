@@ -38,6 +38,9 @@ const drawGameObject = (obj: GameObject, ctx: any) => {
     case GameObjectType.Sensor:
       color = "green";
       break;
+    case GameObjectType.Turnstile:
+      color = "orange";
+      break;
     default:
       throw Error("unrecognized object type");
   }
@@ -81,7 +84,16 @@ const RewindCanvas = ({ level }: {level: number}) => {
         if (currentGameMetadata.rewindsRemaining === 0 && operation === Operation.Rewind) {
           return;
         }
-        localStore.setQuery("getGame", [currentTime], navigateInGame(currentGameState, currentGameState.objects.length-1, operation));
+        if (operation === Operation.UseTurnstile) {
+          return;
+        }
+        localStore.setQuery("getGame", [currentTime], navigateInGame(
+          currentGameState, 
+          currentGameMetadata.timeFlow,
+          currentGameState.objects.length-1, 
+          operation,
+          null, // ok because operation is never Start.
+        ));
       }
     }
   );
@@ -169,7 +181,7 @@ const RewindGame = () => {
         Level: <input type="number" value={level} onChange={handleLevelChange} />
         <button onClick={handleReset}>Reset</button>
       </div>
-      <p>WASD to move, R to rewind</p>
+      <p>WASD to move, T to use Turnstile</p>
     </div>
   );
 };

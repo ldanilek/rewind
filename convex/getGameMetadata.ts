@@ -1,5 +1,5 @@
 import { query } from "convex-dev/server";
-import { computeGameState, GameMetadata, GameState, getConfig, getGame, getUser, initialGameState, InternalGameState, PlayerMove } from "../common";
+import { GameMetadata, GameState, getConfig, getGame, getUser, InternalGameState, PlayerMove } from "../common";
 
 export default query(async ({ db, auth }): Promise<GameMetadata | null> => {
   const user = await getUser(db, auth);
@@ -12,5 +12,6 @@ export default query(async ({ db, auth }): Promise<GameMetadata | null> => {
   return {
     rewindsRemaining: config.maxRewinds - game.currentPlayerIndex,
     level: game.level,
+    timeFlow: game.timeFlow,
   };
 });

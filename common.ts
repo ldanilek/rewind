@@ -1,5 +1,5 @@
 import {Id} from "convex-dev/values"
-import { DatabaseReader, Auth } from "convex-dev/server";
+import { DatabaseReader, Auth, FilterBuilder } from "convex-dev/server";
 
 export type User = {
   _id: Id;
@@ -13,6 +13,7 @@ export enum GameObjectType {
   Obstacle,
   Goal,
   Sensor,
+  Turnstile,
 }
 
 export type SensorTarget = {
@@ -42,6 +43,7 @@ export type GameState = {
 export type GameMetadata = {
   rewindsRemaining: number,
   level: number,
+  timeFlow: TimeFlow,
 };
 
 export enum Operation {
@@ -50,6 +52,14 @@ export enum Operation {
   Left,
   Right,
   Rewind,
+  UseTurnstile,
+  Start,
+}
+
+export enum TimeFlow {
+  Forward = 1,
+  Backward,
+  // Could potentially go at different speeds? Or a different dimension :hmm:.
 }
 
 export type PlayerMove = {
@@ -60,13 +70,29 @@ export type PlayerMove = {
   operation: Operation,
 };
 
+export type Player = {
+  _id: Id,
+  gameId: Id,
+  index: number,
+  timeFlow: TimeFlow,
+  startX: number,
+  startY: number,
+  endX?: number,
+  endY?: number,
+};
+
 export type InternalGameState = {
   _id: Id,
   userId: Id,
   level: number,
-  // From Date.getTime(); Necessary because Convex doesn't support Date.
-  latestRewindTime: number,
+
+  // About the current player:
+  // Their index, where they started in real time and relative time, and their time flow.
   currentPlayerIndex: number,
+  // From Date.getTime(); Necessary because Convex doesn't support Date.
+  latestRealTime: number,
+  latestRelativeTime: number,
+  timeFlow: TimeFlow,
 };
 
 export type GameConfig = {
@@ -84,6 +110,7 @@ const sKey = dvorak ? 79 : 83;
 const dKey = dvorak ? 69 : 68;
 const wKey = dvorak ? 188 : 87;
 const rKey = dvorak ? 0 : 82;
+const tKey = dvorak ? 1 : 84;
 
 export const maxX = 15;
 export const maxY = 15;
@@ -98,8 +125,10 @@ export const keyCodeToOperation = (keyCode: number): Operation | null => {
       return Operation.Right;
     case wKey:
       return Operation.Up;
-    case rKey:
-      return Operation.Rewind;
+    //case rKey:
+    //  return Operation.Rewind;
+    case tKey:
+      return Operation.UseTurnstile;
     default:
       return null;
   }
@@ -130,13 +159,19 @@ const navigationResult = (x: number | null, y: number | null, gameState: GameSta
   return OperationResult.Allowed;
 };
 
-export const navigateInGame = (gameState: GameState, playerIndex: number, operation: Operation): GameState => {
+export const navigateInGame = (
+  gameState: GameState, 
+  gameTimeFlow: TimeFlow,
+  playerIndex: number, 
+  operation: Operation,
+  player: Player | null,  // only required if operation == Start
+): GameState => {
   if (gameState.completionMessage !== null) {
     return gameState;
   }
-  const player = gameState.objects[playerIndex];
-  let newX = player.locationX;
-  let newY = player.locationY;
+  const playerObject = gameState.objects[playerIndex];
+  let newX = playerObject.locationX;
+  let newY = playerObject.locationY;
   switch (operation) {
     case Operation.Left:
       if (newX === null) {
@@ -166,16 +201,38 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
       newX = null;
       newY = null;
       break;
+    case Operation.UseTurnstile:
+      // Check player is on a turnstile.
+      let onTurnstile = false;
+      for (let object of gameState.objects) {
+        if (object.objectType === GameObjectType.Turnstile && object.locationX === playerObject.locationX && object.locationY === playerObject.locationY) {
+          onTurnstile = true;
+          break;
+        }
+      }
+      if (onTurnstile) {
+        newX = null;
+        newY = null;
+      }
+      break;
+    case Operation.Start:
+      if (player === null) {
+        throw Error("need player to Start");
+      }
+      const forward = player.timeFlow === gameTimeFlow;
+      newX = forward ? player.startX : player.endX!;
+      newY = forward ? player.startY : player.endY!;
+      break;
     default:
-      throw Error("unrecognized operation");
+      throw Error(`unrecognized operation ${operation}`);
   }
   let completion: string | null = gameState.completionMessage;
   switch (navigationResult(newX, newY, gameState)) {
     case OperationResult.Allowed:
       break;
     case OperationResult.Blocked:
-      newX = player.locationX;
-      newY = player.locationY;
+      newX = playerObject.locationX;
+      newY = playerObject.locationY;
       break;
     case OperationResult.Win:
       break;
@@ -184,7 +241,7 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
   }
   let updatedObjects = gameState.objects.slice();
   updatedObjects[playerIndex] = {
-    ...player,
+    ...playerObject,
     locationX: newX,
     locationY: newY,
   };
@@ -240,46 +297,35 @@ export const navigateInGame = (gameState: GameState, playerIndex: number, operat
   };
 };
 
-export const computeGameState = (game: InternalGameState, moves: PlayerMove[], nextTime: number | null): GameState => {
+export const computeGameState = (
+  game: InternalGameState, 
+  players: Player[], 
+  moves: PlayerMove[], 
+  nextTime: number | null,
+): GameState => {
   const config = getConfig(game.level);
   let objects = config.initialObjects.slice();
   const playerIndexOffset = objects.length;
-  for (let playerIndex = 0; playerIndex < game.currentPlayerIndex; playerIndex++) {
+  for (let playerIndex = 0; playerIndex <= game.currentPlayerIndex; playerIndex++) {
     objects.push({
-      objectType: GameObjectType.FormerPlayer,
-      locationX: config.playerStartX,
-      locationY: config.playerStartY,
+      objectType: playerIndex === game.currentPlayerIndex ? GameObjectType.Player : GameObjectType.FormerPlayer,
+      locationX: null,
+      locationY: null,
     });
   }
-  objects.push({
-    objectType: GameObjectType.Player,
-    locationX: config.playerStartX,
-    locationY: config.playerStartY,
-  })
   let gameState: GameState = {
     objects,
     nextTime,
     completionMessage: null,
   };
-  // Moves should already be sorted by time.
-  // Sort moves by time.
-  // TODO: do this in the database by storing moves in a separate table.
   for (let move of moves) {
+    // console.log(`processing move ${move.operation} of player ${move.playerIndex} at time ${move.millisSinceStart}`);
+    const player = players[move.playerIndex];
+    const operation = player.timeFlow === game.timeFlow ? move.operation : reverseOperation(move.operation);
     let playerIndex = move.playerIndex + playerIndexOffset;
-    gameState = navigateInGame(gameState, playerIndex, move.operation);
+    gameState = navigateInGame(gameState, game.timeFlow, playerIndex, operation, player);
   }
   return gameState;
-}
-
-export const initialGameState = (level: number, userId: Id): InternalGameState => {
-  // NOTE: needs to be "any" because there's no valid value for `_id`
-  let state: any = {
-    userId,
-    level,
-    latestRewindTime: (new Date()).getTime(),
-    currentPlayerIndex: 0,
-  };
-  return state;
 }
 
 export const gameConfigForLevel = ((): Map<number, GameConfig> => {
@@ -299,28 +345,40 @@ export const gameConfigForLevel = ((): Map<number, GameConfig> => {
     locationY: y,
     sensorTarget: {objectIndices: targets},
   });
+  const turnstile = (x: number, y: number): GameObject => ({
+    objectType: GameObjectType.Turnstile,
+    locationX: x,
+    locationY: y,
+  });
+  const vWall = (x: number, y1: number, y2: number): GameObject[] => {
+    let wall: GameObject[] = [];
+    for (let i = y1; i <= y2; i++) {
+      wall.push(obstacle(x, i));
+    }
+    return wall;
+  };
+  const hWall = (y: number, x1: number, x2: number): GameObject[] => {
+    let wall: GameObject[] = [];
+    for (let i = x1; i <= x2; i++) {
+      wall.push(obstacle(i, y));
+    }
+    return wall;
+  };
 
-  // Partial wall.
-  let objects1: GameObject[] = [];
-  objects1.push(goal(5, 5));
-  for (let i = 0; i < 14; i++) {
-    objects1.push(obstacle(3, i));
-  }
+  const partialWall = vWall(3, 0, 13);
+  const objects1 = [goal(5, 5), ...partialWall];
+
+  const objects1a = [...objects1, turnstile(2, 9)];
 
   // Full wall with a sensor that opens a hole.
-  let objects2: GameObject[] = [];
-  objects2.push(goal(5, 5));
-  for (let i = 0; i < 15; i++) {
-    objects2.push(obstacle(3, i));
-  }
-  objects2.push(sensor(1, 13, 6));
+  const fullWall = vWall(3, 0, 14);
+  const objects2 = [goal(5, 5), ...fullWall, sensor(2, 5, 6)];
+
+  // Now the sensor is further away so you have to use a turnstile.
+  const objects2a = [goal(5, 5), ...fullWall, sensor(1, 5, 6), turnstile(2, 0)];
 
   // Partial wall and Two goals
-  let objects3: GameObject[] = [];
-  objects3.push(goal(5, 5), goal(10, 3));
-  for (let i = 0; i < 14; i++) {
-    objects3.push(obstacle(3, i));
-  }
+  const objects3 = [goal(5, 5), goal(10, 3), ...partialWall, turnstile(2, 0)];
 
   // Enclosed goal with multiple doors.
   const objects4: GameObject[] = [
@@ -342,18 +400,31 @@ export const gameConfigForLevel = ((): Map<number, GameConfig> => {
     sensor(3, 13, 7), // 15
     sensor(7, 13, 10),
     sensor(11, 13, 13),
+    turnstile(1, 13),
   ];
 
-  let objects6 = objects2.slice();
-  objects6.push(goal(2, 0));
+  let objects6 = objects2a.slice();
+  objects6.push(goal(1, 13));
+
+  const objects8 = [
+    ...fullWall, 
+    sensor(2, 5, 5), goal(8, 13), goal(6, 2), 
+    ...hWall(3, 4, 14), 
+    sensor(5, 4, 19), 
+    turnstile(7, 5),
+    ...hWall(10, 4, 14),
+    sensor(5, 9, 32),
+  ];
 
   return new Map<number, GameConfig>([
-    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
-    [2, {initialObjects: objects2, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
-    [3, {initialObjects: objects3, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
-    [4, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 10}],
-    [5, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 1}],
-    [6, {initialObjects: objects6, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
+    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0, maxRewinds: 0}],
+    [2, {initialObjects: objects1a, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
+    [3, {initialObjects: objects2, playerStartX: 0, playerStartY: 0, maxRewinds: 0}],
+    [4, {initialObjects: objects2a, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
+    [5, {initialObjects: objects3, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
+    [6, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 1}],
+    [7, {initialObjects: objects6, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
+    [8, {initialObjects: objects8, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
   ]);
 })();
 
@@ -381,4 +452,87 @@ export const getGame = async (db: DatabaseReader, user: User): Promise<InternalG
   return await db.table("games").order("desc").filter(
     q => q.eq(q.field("userId"), user._id)
   ).first();
+};
+
+export const getMoves = async (
+  db: DatabaseReader, 
+  gameId: Id,
+  relativeTimeBound: number,
+  boundLessThan: boolean,
+  boundEqual: boolean,
+  orderIncreasing: boolean,
+): Promise<PlayerMove[]> => {
+  let moves: PlayerMove[] = await db
+    .table("moves")
+    .filter(q => q.and(
+      q.eq(q.field("gameId"), gameId),
+      (boundLessThan ? (boundEqual ? q.lte : q.lt) : (boundEqual ? q.gte : q.gt))(
+        q.field("millisSinceStart"), relativeTimeBound))
+    ).collect();
+  // It would be nice to sort in the query, but Convex doesn't support that yet.
+  const order = orderIncreasing ? 1 : -1;
+  moves.sort((a, b) => (a.millisSinceStart > b.millisSinceStart) ? order : -1*order);
+  return moves;
+};
+
+export const getPlayers = async (db: DatabaseReader, gameId: Id): Promise<Player[]> => {
+  let players: Player[] = await db
+    .table("players")
+    .filter(
+      q => q.eq(q.field("gameId"), gameId)
+    ).collect();
+  players.sort((a, b) => (a.index > b.index ? 1 : -1));
+  return players;
+}
+
+export const getRelativeTime = (game: InternalGameState, currentRealTime: number) => {
+  const realDuration = currentRealTime - game.latestRealTime;
+  const relativeDuration = game.timeFlow === TimeFlow.Forward ? realDuration : -1 * realDuration;
+  return game.latestRelativeTime + relativeDuration;
+};
+
+export const getRealTime = (game: InternalGameState, relativeTime: number) => {
+  const duration = game.timeFlow === TimeFlow.Forward ? (
+    relativeTime - game.latestRelativeTime
+  ) : (game.latestRelativeTime - relativeTime);
+  return game.latestRealTime + duration;
+}
+
+const reverseOperation = (op: Operation): Operation => {
+  switch (op) {
+    case Operation.Up:
+      return Operation.Down;
+    case Operation.Down:
+      return Operation.Up;
+    case Operation.Right:
+      return Operation.Left;
+    case Operation.Left:
+      return Operation.Right;
+    case Operation.Rewind, Operation.UseTurnstile:
+      return Operation.Start;
+    case Operation.Start:
+      return Operation.Rewind; // make it disappear
+    default:
+      return op;
+  }
+}
+
+export const getGameState = async (
+  db: DatabaseReader,
+  game: InternalGameState,
+  atTime: number,
+): Promise<GameState | null> => {
+  const players = await getPlayers(db, game._id);
+  const relativeTime = getRelativeTime(game, atTime);
+  const forward = game.timeFlow === TimeFlow.Forward;
+  const moves = await getMoves(db, game._id, relativeTime, forward, true, forward);
+
+  // Get next move. Ideally this would be a ORDER BY with LIMIT 1 but Convex doesn't support ordering.
+  const nextMoves = await getMoves(db, game._id, relativeTime, !forward, false, forward);
+  let nextTime: number | null = null;
+  if (nextMoves.length > 0) {
+    nextTime = getRealTime(game, nextMoves[0].millisSinceStart);
+  }
+  const gameState = computeGameState(game, players, moves, nextTime);
+  return gameState;
 }
