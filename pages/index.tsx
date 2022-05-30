@@ -135,8 +135,11 @@ const RewindCanvas = ({ level }: {level: number}) => {
   const createGame = useMutation("reset");
   const navigate = useMutation("navigate").withOptimisticUpdate(
     (localStore, operation) => {
+      // Note these are two ways to compute the most recently rendered game state.
+      // The former works better because the latter has a tendency to be `undefined` if you do multiple
+      // updates in quick succession.
       const currentGameState = lastRenderedGameState;
-      //const currentGameState = localStore.getQuery("getGame", [lastRenderedTime])!;
+      //const currentGameState = localStore.getQuery("getGame", [currentTime])!;
       const currentGameMetadata = localStore.getQuery("getGameMetadata", [])!;
       console.log(currentTime, lastRenderedGameState, currentGameState);
       if (currentGameState && currentGameMetadata) {
