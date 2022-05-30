@@ -4,9 +4,10 @@ import React, { useRef, useEffect, useState } from 'react'
 type CanvasProps = {
   width: number,
   height: number,
+  children?: React.ReactNode,
 };
 
-export const Canvas = React.forwardRef(({width, height}: CanvasProps, canvasRef: any) => {
+export const Canvas = React.forwardRef(({width, height, children}: CanvasProps, canvasRef: any) => {
   const ratio = (typeof window !== 'undefined') ? window.devicePixelRatio : 1;
   useEffect(() => {
     const c = canvasRef.current;
@@ -17,5 +18,15 @@ export const Canvas = React.forwardRef(({width, height}: CanvasProps, canvasRef:
       c.getContext("2d").scale(ratio, ratio);
     }
   }, []);
-  return <canvas ref={canvasRef} width={width} height={height} style={{width: width+"px", height: height+"px"}} />;
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        style={{width: width+"px", height: height+"px"}}
+      />
+      {children}
+    </div>
+  );
 });
