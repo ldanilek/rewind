@@ -125,53 +125,33 @@ const RewindCanvas = ({ level }: {level: number}) => {
   const botImageRef = useRef<any>(null);
   const formerBotImageRef = useRef<any>(null);
   const bullseyeImageRef = useRef<any>(null);
-  const [currentTime, setCurrentTime] = useState((new Date()).getTime());
-  const gameState = useQuery("getGame", currentTime);
-  const [lastRenderedGameState, setLastRenderedGameState] = useState(gameState);
-  if (gameState && gameState !== lastRenderedGameState) {
-    setLastRenderedGameState(gameState);
-  }
+  const gameState = useQuery("getGame");
   const gameMetadata = useQuery("getGameMetadata");
   const createGame = useMutation("reset");
+  const bumpGame = useMutation("bumpGameState");
   const navigate = useMutation("navigate").withOptimisticUpdate(
     (localStore, operation) => {
       // Note these are two ways to compute the most recently rendered game state.
       // The former works better because the latter has a tendency to be `undefined` if you do multiple
       // updates in quick succession.
-      const currentGameState = lastRenderedGameState;
-      //const currentGameState = localStore.getQuery("getGame", [currentTime])!;
+      const currentGameState = localStore.getQuery("getGame", [])!;
       const currentGameMetadata = localStore.getQuery("getGameMetadata", [])!;
-      console.log(currentTime, lastRenderedGameState, currentGameState);
       if (currentGameState && currentGameMetadata) {
-        if (currentGameMetadata.rewindsRemaining === 0 && operation === Operation.Rewind) {
+        if (currentGameMetadata.rewindsRemaining === 0 && operation === Operation.UseTurnstile) {
           return;
         }
         if (operation === Operation.UseTurnstile) {
           return;
         }
-        localStore.setQuery("getGame", [currentTime], navigateInGame(
+        localStore.setQuery("getGame", [], navigateInGame(
           currentGameState, 
-          currentGameMetadata.timeFlow,
           currentGameState.objects.length-1, 
           operation,
-          null, // ok because operation is never Start.
+          null, // ok because operation is never Start or End.
         ));
       }
     }
   );
-
-  const pushTime = (time: number | undefined) => {
-    let newTime = currentTime;
-    if (time && time > newTime) {
-      newTime = time;
-    }
-    const realCurrentTime = (new Date()).getTime();
-    if (realCurrentTime > newTime) {
-      newTime = realCurrentTime;
-    }
-    //console.log("updated time: ", newTime);
-    setCurrentTime(newTime);
-  }
 
   //console.log(gameState);
   useEffect(() => {
@@ -192,11 +172,10 @@ const RewindCanvas = ({ level }: {level: number}) => {
             ["bullseye", bullseyeImage],
           ]),
         );
+        const currentTime = (new Date()).getTime();
         const nextTime = gameState.nextTime;
-        if (nextTime && nextTime !== currentTime) {
-          setTimeout(() => {
-            pushTime(nextTime);
-          }, nextTime - (new Date()).getTime());
+        if (nextTime) {
+          setTimeout(bumpGame, nextTime - currentTime);
         }
       }
     }
@@ -209,9 +188,7 @@ const RewindCanvas = ({ level }: {level: number}) => {
     const operation = keyCodeToOperation(keyCode);
     if (operation) {
       event.preventDefault();
-      navigate(operation).then((newTime) => {
-        pushTime(newTime);
-      });
+      navigate(operation);
     }
   };
 

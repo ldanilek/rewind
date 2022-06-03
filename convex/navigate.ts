@@ -13,37 +13,47 @@ import {
   getRelativeTime,
   GameObjectType,
   getGameState,
+  bumpGameState,
 } from "../common";
 
-export default mutation(async ({ db, auth }, operation: Operation): Promise<number> => {
+export default mutation(async ({ db, auth }, operation: Operation) => {
   const user = await getUser(db, auth);
   const currentTime = new Date();
   const game = await getGame(db, user);
   if (!game) {
-    return currentTime.getTime();
+    return;
   }
+  await bumpGameState(db, game);
   const config = getConfig(game.level);
   if ((operation === Operation.Rewind || operation === Operation.UseTurnstile)
       && config.maxRewinds === game.currentPlayerIndex) {
     console.log("no more rewinds");
-    return currentTime.getTime();
+    return;
   }
-  const relativeTime = getRelativeTime(game, currentTime.getTime());
-  const gameState = await getGameState(db, game, currentTime.getTime());
-  if (gameState === null) {
-    return currentTime.getTime();
+  const state = await getGameState(db, game);
+  if (state === null) {
+    return;
+  }
+  const [gameState, realTime] = state;
+  const relativeTime = getRelativeTime(game, realTime);
+  if (gameState.completionMessage) {
+    return;
   }
   const players = await getPlayers(db, game._id);
   const currentPlayer = players[game.currentPlayerIndex];
   const playerObject = gameState.objects[config.initialObjects.length + game.currentPlayerIndex];
 
   console.log("Navigating with operation", operation);
-  db.insert("moves", {
-    gameId: game._id,
-    playerIndex: game.currentPlayerIndex,
-    millisSinceStart: relativeTime,
-    operation,
-  });
+  if (operation !== Operation.UseTurnstile) {
+    db.insert("moves", {
+      gameId: game._id,
+      playerIndex: game.currentPlayerIndex,
+      millisSinceStart: relativeTime,
+      operation,
+      realTime,
+      userAction: true,
+    });
+  }
   let isEnding = false;
   if (operation === Operation.Rewind) {
     const newPlayerIndex = game.currentPlayerIndex+1;
@@ -71,9 +81,11 @@ export default mutation(async ({ db, auth }, operation: Operation): Promise<numb
     if (onTurnstile) {
       const newPlayerIndex = game.currentPlayerIndex+1;
       const newTimeFlow = game.timeFlow === TimeFlow.Forward ? TimeFlow.Backward : TimeFlow.Forward;
+      const newRealTime = realTime+1;
+      const newRelativeTime = getRelativeTime(game, newRealTime);
       db.update(game._id, {
         latestRealTime: currentTime.getTime(),
-        latestRelativeTime: relativeTime,
+        latestRelativeTime: newRelativeTime,
         currentPlayerIndex: newPlayerIndex,
         timeFlow: newTimeFlow,
       });
@@ -86,15 +98,35 @@ export default mutation(async ({ db, auth }, operation: Operation): Promise<numb
       });
       db.insert("moves", {
         gameId: game._id,
-        playerIndex: newPlayerIndex,
+        playerIndex: game.currentPlayerIndex,
         millisSinceStart: relativeTime,
+        operation: Operation.End,
+        realTime: realTime,
+        userAction: true,
+      });
+      db.insert("moves", {
+        gameId: game._id,
+        playerIndex: game.currentPlayerIndex,
+        millisSinceStart: newRelativeTime,
         operation: Operation.Start,
+        realTime: newRealTime,
+        userAction: false,
+      });
+      db.insert("moves", {
+        gameId: game._id,
+        playerIndex: newPlayerIndex,
+        millisSinceStart: newRelativeTime,
+        operation: Operation.Start,
+        realTime: newRealTime,
+        userAction: true,
       });
       isEnding = true;
     }
   }
   if (isEnding) {
-    db.update(currentPlayer._id, {endX: playerObject.locationX, endY: playerObject.locationY});
+    db.update(currentPlayer._id, {
+      endX: playerObject.locationX,
+      endY: playerObject.locationY,
+    });
   }
-  return currentTime.getTime();
 });

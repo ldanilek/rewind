@@ -6,10 +6,11 @@ export default mutation(async ({ db, auth }, level: number) => {
   const user = await getUser(db, auth);
   console.log("resetting game to level", level);
   const config = getConfig(level);
+  const realTime = (new Date()).getTime();
   const gameId = db.insert("games", {
     userId: user._id,
     level,
-    latestRealTime: (new Date()).getTime(),
+    latestRealTime: realTime,
     latestRelativeTime: 0,
     currentPlayerIndex: 0,
     timeFlow: TimeFlow.Forward,
@@ -26,5 +27,7 @@ export default mutation(async ({ db, auth }, level: number) => {
     playerIndex: 0,
     millisSinceStart: 0,
     operation: Operation.Start,
+    realTime,
+    userAction: true,
   });
 });
