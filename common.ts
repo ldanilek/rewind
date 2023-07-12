@@ -1,11 +1,6 @@
-import {Id} from "convex-dev/values"
-import { DatabaseReader, Auth, FilterBuilder, DatabaseWriter } from "convex-dev/server";
-
-export type User = {
-  _id: Id;
-  name: string;
-  tokenIdentifier: string;
-};
+import { Auth } from "convex/server";
+import { Doc, Id } from "./convex/_generated/dataModel";
+import { DatabaseReader, DatabaseWriter } from "./convex/_generated/server";
 
 export enum GameObjectType {
   Player = 1,
@@ -64,8 +59,8 @@ export enum TimeFlow {
 }
 
 export type PlayerMove = {
-  _id: Id,
-  gameId: Id,
+  _id: Id<"moves">,
+  gameId: Id<"games">,
   playerIndex: number,
   millisSinceStart: number,
   operation: Operation,
@@ -74,8 +69,8 @@ export type PlayerMove = {
 };
 
 export type Player = {
-  _id: Id,
-  gameId: Id,
+  _id: Id<"players">,
+  gameId: Id<"games">,
   index: number,
   timeFlow: TimeFlow,
   // Temporary, not persisted to db
@@ -84,8 +79,8 @@ export type Player = {
 };
 
 export type InternalGameState = {
-  _id: Id,
-  userId: Id,
+  _id: Id<"games">,
+  userId: Id<"users">,
   level: number,
 
   // About the current player:
@@ -440,34 +435,34 @@ export const getConfig = (level: number): GameConfig => {
   return {playerStartX: 0, playerStartY: 0, initialObjects: [], maxRewinds: 1000};
 }
 
-export const getUser = async (db: DatabaseReader, auth: Auth): Promise<User> => {
+export const getUser = async (db: DatabaseReader, auth: Auth): Promise<Doc<"users">> => {
   const identity = await auth.getUserIdentity();
   if (!identity) {
     throw new Error("Unauthenticated call to reset");
   }
-  const user = await db
-    .table("users")
+  const user = (await db
+    .query("users")
     .filter(q => q.eq(q.field("tokenIdentifier"), identity.tokenIdentifier))
-    .unique();
+    .unique())!;
   return user;
 };
 
-export const getGame = async (db: DatabaseReader, user: User): Promise<InternalGameState | null> => {
-  return await db.table("games").order("desc").filter(
+export const getGame = async (db: DatabaseReader, user: Doc<"users">): Promise<InternalGameState | null> => {
+  return await db.query("games").order("desc").filter(
     q => q.eq(q.field("userId"), user._id)
   ).first();
 };
 
 export const getMoves = async (
   db: DatabaseReader, 
-  gameId: Id,
+  gameId: Id<"games">,
   relativeTimeBound: number,
   boundLessThan: boolean,
   boundEqual: boolean,
   orderIncreasing: boolean,
 ): Promise<PlayerMove[]> => {
   let moves: PlayerMove[] = await db
-    .table("moves")
+    .query("moves")
     .filter(q => q.and(
       q.eq(q.field("gameId"), gameId),
       q.eq(q.field("userAction"), true),
@@ -482,11 +477,11 @@ export const getMoves = async (
 
 export const getMovesRealTime = async (
   db: DatabaseReader, 
-  gameId: Id,
+  gameId: Id<"games">,
   orderIncreasing: boolean,
 ): Promise<PlayerMove[]> => {
   let moves: PlayerMove[] = await db
-    .table("moves")
+    .query("moves")
     .filter(q =>
       q.eq(q.field("gameId"), gameId)
     ).collect();
@@ -496,9 +491,9 @@ export const getMovesRealTime = async (
   return moves;
 };
 
-export const getPlayers = async (db: DatabaseReader, gameId: Id): Promise<Player[]> => {
+export const getPlayers = async (db: DatabaseReader, gameId: Id<"games">): Promise<Player[]> => {
   let players: Player[] = await db
-    .table("players")
+    .query("players")
     .filter(
       q => q.eq(q.field("gameId"), gameId)
     ).collect();

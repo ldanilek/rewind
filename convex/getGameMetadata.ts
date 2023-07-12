@@ -1,4 +1,4 @@
-import { query } from "convex-dev/server";
+import { query } from "./_generated/server";
 import { GameMetadata, GameState, getConfig, getGame, getUser, InternalGameState, PlayerMove } from "../common";
 
 export default query(async ({ db, auth }): Promise<GameMetadata | null> => {

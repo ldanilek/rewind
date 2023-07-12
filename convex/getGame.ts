@@ -1,4 +1,4 @@
-import { query } from "convex-dev/server";
+import { query } from "./_generated/server";
 import { GameState, getGame, getGameState, getPlayers, getRelativeTime, getUser, InternalGameState, PlayerMove } from "../common";
 
 // Returns the GameState to render and the next timestamp where something will happen.

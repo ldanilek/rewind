@@ -1,13 +1,12 @@
-import { mutation } from "convex-dev/server";
-import { Id } from "convex-dev/values";
+import { mutation } from "./_generated/server";
 import { getUser, getConfig, TimeFlow, Operation } from "../common";
 
-export default mutation(async ({ db, auth }, level: number) => {
+export default mutation(async ({ db, auth }, { level }: { level: number }) => {
   const user = await getUser(db, auth);
   console.log("resetting game to level", level);
   const config = getConfig(level);
-  const realTime = (new Date()).getTime();
-  const gameId = db.insert("games", {
+  const realTime = new Date().getTime();
+  const gameId = await db.insert("games", {
     userId: user._id,
     level,
     latestRealTime: realTime,

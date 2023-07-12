@@ -1,5 +1,4 @@
-import { mutation } from "convex-dev/server";
-import { Id } from "convex-dev/values";
+import { mutation } from "./_generated/server";
 import { 
   getUser, 
   getGame,

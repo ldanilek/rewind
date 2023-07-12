@@ -3,19 +3,20 @@ import Head from 'next/head'
 import Image from 'next/image'
 import styles from '../styles/Home.module.css'
 import React, { useRef, useEffect, useState } from 'react'
+import { ConvexProviderWithAuth0 } from "convex/react-auth0";
 import {GameObjectType, GameObject, GameState, navigateInGame, keyCodeToOperation, Operation, maxX, maxY, GameMetadata} from "../common";
-import { useQuery, useMutation, useConvex } from "../convex/_generated";
+import { useQuery, useMutation, useConvex, useConvexAuth } from "convex/react";
 import { Auth0Provider } from "@auth0/auth0-react";
 import { useAuth0 } from "@auth0/auth0-react";
 
 
 
-import { ConvexProvider, ConvexReactClient } from "convex-dev/react";
-import convexConfig from "../convex.json";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { Canvas } from '../canvas'
-import { Id } from 'convex-dev/values'
+import { Id } from '../convex/_generated/dataModel'
+import { api } from '../convex/_generated/api'
 
-const convex = new ConvexReactClient(convexConfig.origin);
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 
 const size = 30;
@@ -125,17 +126,17 @@ const RewindCanvas = ({ level }: {level: number}) => {
   const botImageRef = useRef<any>(null);
   const formerBotImageRef = useRef<any>(null);
   const bullseyeImageRef = useRef<any>(null);
-  const gameState = useQuery("getGame");
-  const gameMetadata = useQuery("getGameMetadata");
-  const createGame = useMutation("reset");
-  const bumpGame = useMutation("bumpGameState");
-  const navigate = useMutation("navigate").withOptimisticUpdate(
-    (localStore, operation) => {
+  const gameState = useQuery(api.getGame.default);
+  const gameMetadata = useQuery(api.getGameMetadata.default);
+  const createGame = useMutation(api.reset.default);
+  const bumpGame = useMutation(api.bumpGameState.default);
+  const navigate = useMutation(api.navigate.default).withOptimisticUpdate(
+    (localStore, {operation}) => {
       // Note these are two ways to compute the most recently rendered game state.
       // The former works better because the latter has a tendency to be `undefined` if you do multiple
       // updates in quick succession.
-      const currentGameState = localStore.getQuery("getGame", [])!;
-      const currentGameMetadata = localStore.getQuery("getGameMetadata", [])!;
+      const currentGameState = localStore.getQuery(api.getGame.default, {})!;
+      const currentGameMetadata = localStore.getQuery(api.getGameMetadata.default, {})!;
       if (currentGameState && currentGameMetadata) {
         if (currentGameMetadata.rewindsRemaining === 0 && operation === Operation.UseTurnstile) {
           return;
@@ -143,7 +144,7 @@ const RewindCanvas = ({ level }: {level: number}) => {
         if (operation === Operation.UseTurnstile) {
           return;
         }
-        localStore.setQuery("getGame", [], navigateInGame(
+        localStore.setQuery(api.getGame.default, {}, navigateInGame(
           currentGameState, 
           currentGameState.objects.length-1, 
           operation,
@@ -188,7 +189,7 @@ const RewindCanvas = ({ level }: {level: number}) => {
     const operation = keyCodeToOperation(keyCode);
     if (operation) {
       event.preventDefault();
-      navigate(operation);
+      navigate({operation});
     }
   };
 
@@ -201,7 +202,7 @@ const RewindCanvas = ({ level }: {level: number}) => {
 
   useEffect(() => {
     if (gameState === null) {
-      createGame(level);
+      createGame({level});
     }
   });
 
@@ -215,16 +216,16 @@ const RewindCanvas = ({ level }: {level: number}) => {
 };
 
 const RewindGame = () => {
-  const gameMetadata = useQuery("getGameMetadata");
+  const gameMetadata = useQuery(api.getGameMetadata.default);
   const [level, setLevel] = useState(1);
   useEffect(() => {
     if (gameMetadata) {
       setLevel(gameMetadata.level);
     }
   }, [gameMetadata]);
-  const reset = useMutation("reset");
+  const reset = useMutation(api.reset.default);
   const handleReset = () => {
-    reset(level);
+    reset({level});
   };
   const handleLevelChange = (event: any) => {
     setLevel(+event.target.value);
@@ -255,7 +256,7 @@ function LoginLogout() {
         <p>Logged in as {user!.name}</p>
         <button
           className="btn btn-primary"
-          onClick={() => logout({ returnTo: window.location.origin })}
+          onClick={() => logout()}
         >
           Log out
         </button>
@@ -263,7 +264,7 @@ function LoginLogout() {
     );
   } else {
     return (
-      <button className="btn btn-primary" onClick={loginWithRedirect}>
+      <button className="btn btn-primary" onClick={() => loginWithRedirect()}>
         Log in
       </button>
     );
@@ -271,35 +272,32 @@ function LoginLogout() {
 }
 
 const RewindApp = () => {
-  const { isAuthenticated, isLoading, getIdTokenClaims } = useAuth0();
-  const [userId, setUserId] = useState<Id | null>(null);
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const [userId, setUserId] = useState<Id<"users"> | null>(null);
   const convex = useConvex();
-  const storeUser = useMutation("storeUser");
+  const storeUser = useMutation(api.storeUser.default);
   // Pass the ID token to the Convex client when logged in, and clear it when logged out.
   // After setting the ID token, call the `storeUser` mutation function to store
   // the current user in the `users` table and return the `Id` value.
   useEffect(() => {
     if (isLoading) {
+      console.log("loading");
       return;
     }
     if (isAuthenticated) {
-      getIdTokenClaims().then(async claims => {
-        // Get the raw ID token from the claims.
-        const token = claims!.__raw;
-        // Pass it to the Convex client.
-        convex.setAuth(token);
+      void (async claims => {
         // Store the user in the database.
         // Recall that `storeUser` gets the user information via the `auth`
         // object on the server. You don't need to pass anything manually here.
         const id = await storeUser();
+        console.log("user id", id);
         setUserId(id);
-      });
+      })();
     } else {
-      // Tell the Convex client to clear all authentication state.
-      convex.clearAuth();
+      console.log("logging out");
       setUserId(null);
     }
-  }, [isAuthenticated, isLoading, getIdTokenClaims, convex, storeUser]);
+  }, [isAuthenticated, isLoading, convex, storeUser]);
   
   return <main className={styles.main}>
     <h1 className={styles.title}>
@@ -332,13 +330,17 @@ const Home: NextPage = () => {
         // domain and clientId come from your Auth0 app dashboard
         domain="dev-1rfqpgu8.us.auth0.com"
         clientId="hCuEQRLomvsSRrCXXuk00Rec7cylgYb8"
-        redirectUri={origin}
+        authorizationParams={{
+          redirect_uri: origin
+        }}
+        useRefreshTokens={true}
+        // redirectUri={origin}
         // allows auth0 to cache the authentication state locally
         cacheLocation="localstorage"
       >
-        <ConvexProvider client={convex}>
+        <ConvexProviderWithAuth0 client={convex}>
           <RewindApp />
-        </ConvexProvider>
+        </ConvexProviderWithAuth0>
       </Auth0Provider> : <p>Loading...</p>}
       <footer className={styles.footer}>
         <a

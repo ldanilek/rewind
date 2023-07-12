@@ -1,5 +1,4 @@
-import { mutation } from "convex-dev/server";
-import { Id } from "convex-dev/values";
+import { mutation } from "./_generated/server";
 import { 
   GameState, 
   keyCodeToOperation, 
@@ -16,7 +15,7 @@ import {
   bumpGameState,
 } from "../common";
 
-export default mutation(async ({ db, auth }, operation: Operation) => {
+export default mutation(async ({ db, auth }, {operation}: {operation: Operation}) => {
   const user = await getUser(db, auth);
   const currentTime = new Date();
   const game = await getGame(db, user);
@@ -57,11 +56,11 @@ export default mutation(async ({ db, auth }, operation: Operation) => {
   let isEnding = false;
   if (operation === Operation.Rewind) {
     const newPlayerIndex = game.currentPlayerIndex+1;
-    db.update(game._id, {
+    await db.patch(game._id, {
       latestRealTime: currentTime.getTime(),
       currentPlayerIndex: newPlayerIndex,
     });
-    db.insert("players", {
+    await db.insert("players", {
       gameId: game._id,
       index: newPlayerIndex,
       startX: config.playerStartX,
@@ -83,20 +82,20 @@ export default mutation(async ({ db, auth }, operation: Operation) => {
       const newTimeFlow = game.timeFlow === TimeFlow.Forward ? TimeFlow.Backward : TimeFlow.Forward;
       const newRealTime = realTime+1;
       const newRelativeTime = getRelativeTime(game, newRealTime);
-      db.update(game._id, {
+      await db.patch(game._id, {
         latestRealTime: currentTime.getTime(),
         latestRelativeTime: newRelativeTime,
         currentPlayerIndex: newPlayerIndex,
         timeFlow: newTimeFlow,
       });
-      db.insert("players", {
+      await db.insert("players", {
         gameId: game._id,
         index: newPlayerIndex,
         startX: playerObject.locationX,
         startY: playerObject.locationY,
         timeFlow: newTimeFlow,
       });
-      db.insert("moves", {
+      await db.insert("moves", {
         gameId: game._id,
         playerIndex: game.currentPlayerIndex,
         millisSinceStart: relativeTime,
@@ -104,7 +103,7 @@ export default mutation(async ({ db, auth }, operation: Operation) => {
         realTime: realTime,
         userAction: true,
       });
-      db.insert("moves", {
+      await db.insert("moves", {
         gameId: game._id,
         playerIndex: game.currentPlayerIndex,
         millisSinceStart: newRelativeTime,
@@ -112,7 +111,7 @@ export default mutation(async ({ db, auth }, operation: Operation) => {
         realTime: newRealTime,
         userAction: false,
       });
-      db.insert("moves", {
+      await db.insert("moves", {
         gameId: game._id,
         playerIndex: newPlayerIndex,
         millisSinceStart: newRelativeTime,
@@ -124,7 +123,7 @@ export default mutation(async ({ db, auth }, operation: Operation) => {
     }
   }
   if (isEnding) {
-    db.update(currentPlayer._id, {
+    await db.patch(currentPlayer._id, {
       endX: playerObject.locationX,
       endY: playerObject.locationY,
     });
