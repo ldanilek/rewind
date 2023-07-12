@@ -14,14 +14,14 @@ export default mutation(async ({ db, auth }, { level }: { level: number }) => {
     currentPlayerIndex: 0,
     timeFlow: TimeFlow.Forward,
   });
-  db.insert("players", {
+  await db.insert("players", {
     gameId,
     index: 0,
     startX: config.playerStartX,
     startY: config.playerStartY,
     timeFlow: TimeFlow.Forward,
   });
-  db.insert("moves", {
+  await db.insert("moves", {
     gameId,
     playerIndex: 0,
     millisSinceStart: 0,

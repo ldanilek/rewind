@@ -129,7 +129,6 @@ const RewindCanvas = ({ level }: {level: number}) => {
   const gameState = useQuery(api.getGame.default);
   const gameMetadata = useQuery(api.getGameMetadata.default);
   const createGame = useMutation(api.reset.default);
-  const bumpGame = useMutation(api.bumpGameState.default);
   const navigate = useMutation(api.navigate.default).withOptimisticUpdate(
     (localStore, {operation}) => {
       // Note these are two ways to compute the most recently rendered game state.
@@ -173,11 +172,6 @@ const RewindCanvas = ({ level }: {level: number}) => {
             ["bullseye", bullseyeImage],
           ]),
         );
-        const currentTime = (new Date()).getTime();
-        const nextTime = gameState.nextTime;
-        if (nextTime) {
-          setTimeout(bumpGame, nextTime - currentTime);
-        }
       }
     }
   });

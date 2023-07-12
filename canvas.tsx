@@ -7,7 +7,7 @@ type CanvasProps = {
   children?: React.ReactNode,
 };
 
-export const Canvas = React.forwardRef(({width, height, children}: CanvasProps, canvasRef: any) => {
+const CanvasComponent = ({width, height, children}: CanvasProps, canvasRef: any) => {
   const ratio = (typeof window !== 'undefined') ? window.devicePixelRatio : 1;
   useEffect(() => {
     const c = canvasRef.current;
@@ -17,7 +17,7 @@ export const Canvas = React.forwardRef(({width, height, children}: CanvasProps, 
       c.height = height * ratio;
       c.getContext("2d").scale(ratio, ratio);
     }
-  }, []);
+  }, [canvasRef, height, ratio, width]);
   return (
     <div>
       <canvas
@@ -29,4 +29,8 @@ export const Canvas = React.forwardRef(({width, height, children}: CanvasProps, 
       {children}
     </div>
   );
-});
+};
+
+CanvasComponent.displayName = "canvas";
+
+export const Canvas = React.forwardRef(CanvasComponent);

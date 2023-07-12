@@ -1,15 +1,15 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { 
   getUser, 
   getGame,
   bumpGameState,
 } from "../common";
+import { Id } from "./_generated/dataModel";
 
-export default mutation(async ({ db, auth }) => {
-  const user = await getUser(db, auth);
-  const game = await getGame(db, user);
+export default internalMutation(async ({ db, scheduler }, { gameId }: { gameId: Id<"games"> }) => {
+  const game = await db.get(gameId);
   if (!game) {
     return;
   }
-  await bumpGameState(db, game);
+  await bumpGameState(db, game, scheduler);
 });

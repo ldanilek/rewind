@@ -30,10 +30,10 @@ export default mutation(async ({ db }, increment: number) => {
     counterDoc = {
       counter: increment,
     };
-    db.insert("counter_table", counterDoc);
+    await db.insert("counter_table", counterDoc);
   } else {
     counterDoc.counter += increment;
-    db.update(counterDoc._id, counterDoc);
+    await db.update(counterDoc._id, counterDoc);
   }
   // Like console.log but relays log messages from the server to client.
   console.log(`Value of counter is now ${counterDoc.counter}`);

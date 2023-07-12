@@ -10,7 +10,13 @@ export default defineSchema({
     operation: v.number(), // enum Operation
     realTime: v.number(),
     userAction: v.boolean(),
-  }),
+  })
+    .index("user_action_by_millis_since_start", [
+      "gameId",
+      "userAction",
+      "millisSinceStart",
+    ])
+    .index("by_game_real_time", ["gameId", "realTime"]),
   players: defineTable({
     gameId: v.id("games"),
     index: v.number(),
@@ -25,7 +31,7 @@ export default defineSchema({
     startY: v.union(v.number(), v.null()),
     endX: v.optional(v.union(v.number(), v.null())),
     endY: v.optional(v.union(v.number(), v.null())),
-  }),
+  }).index("by_index", ["gameId", "index"]),
   games: defineTable({
     userId: v.id("users"),
     level: v.number(),
@@ -40,7 +46,7 @@ export default defineSchema({
       v.literal(TimeFlow.Forward),
       v.literal(TimeFlow.Backward)
     ),
-  }),
+  }).index("by_user", ["userId"]),
   users: defineTable({
     name: v.string(),
     tokenIdentifier: v.string(),

@@ -1,6 +1,7 @@
-import { Auth } from "convex/server";
+import { Auth, Scheduler } from "convex/server";
 import { Doc, Id } from "./convex/_generated/dataModel";
 import { DatabaseReader, DatabaseWriter } from "./convex/_generated/server";
+import { internal } from "./convex/_generated/api";
 
 export enum GameObjectType {
   Player = 1,
@@ -13,32 +14,30 @@ export enum GameObjectType {
 
 export type SensorTarget = {
   // For now all targets disappear while the sensor is triggered, and reappear after.
-  objectIndices: number[],
-}
+  objectIndices: number[];
+};
 
 export type GameObject = {
-  objectType: GameObjectType,
-  locationX: number | null,
-  locationY: number | null,
-  sensorTarget?: SensorTarget,
-  formerX?: number | null,
-  formerY?: number | null,
-}
+  objectType: GameObjectType;
+  locationX: number | null;
+  locationY: number | null;
+  sensorTarget?: SensorTarget;
+  formerX?: number | null;
+  formerY?: number | null;
+};
 
 // This is the game that can be rendered.
 export type GameState = {
   // The last object can be mutated for optimistic updates.
-  objects: Array<GameObject>,
-  // Server-computed true time. Wait until this time to fetch new game state.
-  nextTime: number | null,
-  completionMessage: string | null,
+  objects: Array<GameObject>;
+  completionMessage: string | null;
 };
 
 // Not dependent on current time.
 export type GameMetadata = {
-  rewindsRemaining: number,
-  level: number,
-  timeFlow: TimeFlow,
+  rewindsRemaining: number;
+  level: number;
+  timeFlow: TimeFlow;
 };
 
 export enum Operation {
@@ -58,49 +57,15 @@ export enum TimeFlow {
   // Could potentially go at different speeds? Or a different dimension :hmm:.
 }
 
-export type PlayerMove = {
-  _id: Id<"moves">,
-  gameId: Id<"games">,
-  playerIndex: number,
-  millisSinceStart: number,
-  operation: Operation,
-  realTime: number,
-  userAction: boolean,
-};
-
-export type Player = {
-  _id: Id<"players">,
-  gameId: Id<"games">,
-  index: number,
-  timeFlow: TimeFlow,
-  // Temporary, not persisted to db
-  formerX?: number,
-  formerY?: number,
-};
-
-export type InternalGameState = {
-  _id: Id<"games">,
-  userId: Id<"users">,
-  level: number,
-
-  // About the current player:
-  // Their index, where they started in real time and relative time, and their time flow.
-  currentPlayerIndex: number,
-  // From Date.getTime(); Necessary because Convex doesn't support Date.
-  latestRealTime: number,
-  latestRelativeTime: number,
-  timeFlow: TimeFlow,
-};
-
 export type GameConfig = {
   // Excluding players
-  initialObjects: Array<GameObject>,
-  playerStartX: number,
-  playerStartY: number,
-  maxRewinds: number,
+  initialObjects: Array<GameObject>;
+  playerStartX: number;
+  playerStartY: number;
+  maxRewinds: number;
 };
 
-const dvorak = true;
+const dvorak = false;
 
 const aKey = dvorak ? 65 : 65;
 const sKey = dvorak ? 79 : 83;
@@ -140,7 +105,7 @@ enum OperationResult {
 const navigationResult = (
   x: number | null,
   y: number | null,
-  gameState: GameState,
+  gameState: GameState
 ): OperationResult => {
   if (x === null || y === null) {
     return OperationResult.Allowed;
@@ -161,10 +126,10 @@ const navigationResult = (
 };
 
 export const navigateInGame = (
-  gameState: GameState, 
-  playerIndex: number, 
+  gameState: GameState,
+  playerIndex: number,
   operation: Operation,
-  player: Player | null,  // only required if operation == Start
+  player: Doc<"players"> | null // only required if operation == Start
 ): GameState => {
   if (gameState.completionMessage !== null) {
     return gameState;
@@ -207,7 +172,11 @@ export const navigateInGame = (
       newY = null;
       break;
     case Operation.Start:
-      if (player === null || player.formerX === undefined || player.formerY === undefined) {
+      if (
+        player === null ||
+        player.formerX === undefined ||
+        player.formerY === undefined
+      ) {
         throw Error("need player to Start");
       }
       newX = player.formerX!;
@@ -240,12 +209,21 @@ export const navigateInGame = (
   let triggeredGoals = 0;
   let allGoals = 0;
   updatedObjects.forEach((object) => {
-    if (object.objectType === GameObjectType.Sensor || object.objectType === GameObjectType.Goal) {
+    if (
+      object.objectType === GameObjectType.Sensor ||
+      object.objectType === GameObjectType.Goal
+    ) {
       let triggered = false;
       if (object.locationX !== null && object.locationY !== null) {
-        for(let maybePlayer of updatedObjects) {
-          if (maybePlayer.objectType === GameObjectType.Player || maybePlayer.objectType === GameObjectType.FormerPlayer) {
-            if (object.locationX === maybePlayer.locationX && object.locationY === maybePlayer.locationY) {
+        for (let maybePlayer of updatedObjects) {
+          if (
+            maybePlayer.objectType === GameObjectType.Player ||
+            maybePlayer.objectType === GameObjectType.FormerPlayer
+          ) {
+            if (
+              object.locationX === maybePlayer.locationX &&
+              object.locationY === maybePlayer.locationY
+            ) {
               triggered = true;
             }
           }
@@ -260,10 +238,19 @@ export const navigateInGame = (
               ...targetObject,
               locationX: null,
               locationY: null,
-              formerX: targetObject.formerX !== undefined ? targetObject.formerX : targetObject.locationX,
-              formerY: targetObject.formerY !== undefined ? targetObject.formerY : targetObject.locationY,
+              formerX:
+                targetObject.formerX !== undefined
+                  ? targetObject.formerX
+                  : targetObject.locationX,
+              formerY:
+                targetObject.formerY !== undefined
+                  ? targetObject.formerY
+                  : targetObject.locationY,
             };
-          } else if (targetObject.formerX !== undefined && targetObject.formerY !== undefined) {
+          } else if (
+            targetObject.formerX !== undefined &&
+            targetObject.formerY !== undefined
+          ) {
             updatedObjects[targetIndex] = {
               ...targetObject,
               locationX: targetObject.formerX,
@@ -290,42 +277,49 @@ export const navigateInGame = (
 };
 
 export const computeGameState = (
-  game: InternalGameState, 
-  players: Player[], 
-  moves: PlayerMove[], 
-  nextTime: number | null,
+  game: Doc<"games">,
+  players: Doc<"players">[],
+  moves: Doc<"moves">[]
 ): GameState => {
   const config = getConfig(game.level);
   let objects = config.initialObjects.slice();
   const playerIndexOffset = objects.length;
-  for (let playerIndex = 0; playerIndex <= game.currentPlayerIndex; playerIndex++) {
+  for (
+    let playerIndex = 0;
+    playerIndex <= game.currentPlayerIndex;
+    playerIndex++
+  ) {
     objects.push({
-      objectType: playerIndex === game.currentPlayerIndex ? GameObjectType.Player : GameObjectType.FormerPlayer,
+      objectType:
+        playerIndex === game.currentPlayerIndex
+          ? GameObjectType.Player
+          : GameObjectType.FormerPlayer,
       locationX: null,
       locationY: null,
     });
   }
   let gameState: GameState = {
     objects,
-    nextTime,
     completionMessage: null,
   };
   for (let move of moves) {
-    console.log(`processing move ${move.operation} of player ${move.playerIndex} at time ${move.millisSinceStart}`);
+    /*console.log(
+      `processing move ${move.operation} of player ${move.playerIndex} at time ${move.millisSinceStart}`
+    );*/
     const player = players[move.playerIndex];
     //const operation = player.timeFlow === TimeFlow.Forward ? move.operation : reverseOperation(move.operation);
     const operation = move.operation;
     let playerIndex = move.playerIndex + playerIndexOffset;
     if (move.operation === Operation.End && move.userAction) {
       // When player i uses turnstile, that determines the initial location for player i+1.
-      const nextPlayer = players[move.playerIndex+1];
+      const nextPlayer = players[move.playerIndex + 1];
       nextPlayer.formerX = gameState.objects[playerIndex].locationX ?? 0;
       nextPlayer.formerY = gameState.objects[playerIndex].locationY ?? 0;
     }
     gameState = navigateInGame(gameState, playerIndex, operation, player);
   }
   return gameState;
-}
+};
 
 export const gameConfigForLevel = ((): Map<number, GameConfig> => {
   const obstacle = (x: number, y: number): GameObject => ({
@@ -342,7 +336,7 @@ export const gameConfigForLevel = ((): Map<number, GameConfig> => {
     objectType: GameObjectType.Sensor,
     locationX: x,
     locationY: y,
-    sensorTarget: {objectIndices: targets},
+    sensorTarget: { objectIndices: targets },
   });
   const turnstile = (x: number, y: number): GameObject => ({
     objectType: GameObjectType.Turnstile,
@@ -406,24 +400,90 @@ export const gameConfigForLevel = ((): Map<number, GameConfig> => {
   objects6.push(goal(1, 13));
 
   const objects8 = [
-    ...fullWall, 
-    sensor(2, 5, 5), goal(8, 13), goal(6, 2), 
-    ...hWall(3, 4, 14), 
-    sensor(5, 4, 19), 
+    ...fullWall,
+    sensor(2, 5, 5),
+    goal(8, 13),
+    goal(6, 2),
+    ...hWall(3, 4, 14),
+    sensor(5, 4, 19),
     turnstile(7, 5),
     ...hWall(10, 4, 14),
     sensor(5, 9, 32),
   ];
 
   return new Map<number, GameConfig>([
-    [1, {initialObjects: objects1, playerStartX: 0, playerStartY: 0, maxRewinds: 0}],
-    [2, {initialObjects: objects1a, playerStartX: 0, playerStartY: 0, maxRewinds: 10}],
-    [3, {initialObjects: objects2, playerStartX: 0, playerStartY: 0, maxRewinds: 0}],
-    [4, {initialObjects: objects2a, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
-    [5, {initialObjects: objects3, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
-    [6, {initialObjects: objects4, playerStartX: 14, playerStartY: 8, maxRewinds: 1}],
-    [7, {initialObjects: objects6, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
-    [8, {initialObjects: objects8, playerStartX: 0, playerStartY: 0, maxRewinds: 1}],
+    [
+      1,
+      {
+        initialObjects: objects1,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 0,
+      },
+    ],
+    [
+      2,
+      {
+        initialObjects: objects1a,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 10,
+      },
+    ],
+    [
+      3,
+      {
+        initialObjects: objects2,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 0,
+      },
+    ],
+    [
+      4,
+      {
+        initialObjects: objects2a,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 1,
+      },
+    ],
+    [
+      5,
+      {
+        initialObjects: objects3,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 1,
+      },
+    ],
+    [
+      6,
+      {
+        initialObjects: objects4,
+        playerStartX: 14,
+        playerStartY: 8,
+        maxRewinds: 1,
+      },
+    ],
+    [
+      7,
+      {
+        initialObjects: objects6,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 1,
+      },
+    ],
+    [
+      8,
+      {
+        initialObjects: objects8,
+        playerStartX: 0,
+        playerStartY: 0,
+        maxRewinds: 1,
+      },
+    ],
   ]);
 })();
 
@@ -432,85 +492,106 @@ export const getConfig = (level: number): GameConfig => {
   if (config) {
     return config;
   }
-  return {playerStartX: 0, playerStartY: 0, initialObjects: [], maxRewinds: 1000};
-}
+  return {
+    playerStartX: 0,
+    playerStartY: 0,
+    initialObjects: [],
+    maxRewinds: 1000,
+  };
+};
 
-export const getUser = async (db: DatabaseReader, auth: Auth): Promise<Doc<"users">> => {
+export const getUser = async (
+  db: DatabaseReader,
+  auth: Auth
+): Promise<Doc<"users">> => {
   const identity = await auth.getUserIdentity();
   if (!identity) {
     throw new Error("Unauthenticated call to reset");
   }
   const user = (await db
     .query("users")
-    .filter(q => q.eq(q.field("tokenIdentifier"), identity.tokenIdentifier))
+    .withIndex("by_token", (q) =>
+      q.eq("tokenIdentifier", identity.tokenIdentifier)
+    )
     .unique())!;
   return user;
 };
 
-export const getGame = async (db: DatabaseReader, user: Doc<"users">): Promise<InternalGameState | null> => {
-  return await db.query("games").order("desc").filter(
-    q => q.eq(q.field("userId"), user._id)
-  ).first();
+export const getGame = async (
+  db: DatabaseReader,
+  user: Doc<"users">
+): Promise<Doc<"games"> | null> => {
+  return await db
+    .query("games")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .order("desc")
+    .first();
 };
 
 export const getMoves = async (
-  db: DatabaseReader, 
+  db: DatabaseReader,
   gameId: Id<"games">,
   relativeTimeBound: number,
   boundLessThan: boolean,
   boundEqual: boolean,
-  orderIncreasing: boolean,
-): Promise<PlayerMove[]> => {
-  let moves: PlayerMove[] = await db
+  orderIncreasing: boolean
+): Promise<Doc<"moves">[]> => {
+  const moves = await db
     .query("moves")
-    .filter(q => q.and(
-      q.eq(q.field("gameId"), gameId),
-      q.eq(q.field("userAction"), true),
-      (boundLessThan ? (boundEqual ? q.lte : q.lt) : (boundEqual ? q.gte : q.gt))(
-        q.field("millisSinceStart"), relativeTimeBound))
-    ).collect();
-  // It would be nice to sort in the query, but Convex doesn't support that yet.
-  const order = orderIncreasing ? 1 : -1;
-  moves.sort((a, b) => (a.millisSinceStart > b.millisSinceStart) ? order : -1*order);
+    .withIndex("user_action_by_millis_since_start", (q) => {
+      const q1 = q.eq("gameId", gameId).eq("userAction", true);
+      return (
+        boundLessThan
+          ? boundEqual
+            ? q1.lte.bind(q1)
+            : q1.lt.bind(q1)
+          : boundEqual
+          ? q1.gte.bind(q1)
+          : q1.gt.bind(q1)
+      )("millisSinceStart", relativeTimeBound);
+    })
+    .order(orderIncreasing ? "asc" : "desc")
+    .collect();
   return moves;
 };
 
 export const getMovesRealTime = async (
-  db: DatabaseReader, 
+  db: DatabaseReader,
   gameId: Id<"games">,
-  orderIncreasing: boolean,
-): Promise<PlayerMove[]> => {
-  let moves: PlayerMove[] = await db
+  orderIncreasing: boolean
+): Promise<Doc<"moves">[]> => {
+  return await db
     .query("moves")
-    .filter(q =>
-      q.eq(q.field("gameId"), gameId)
-    ).collect();
-  // It would be nice to sort in the query, but Convex doesn't support that yet.
-  const order = orderIncreasing ? 1 : -1;
-  moves.sort((a, b) => (a.realTime > b.realTime) ? order : -1*order);
-  return moves;
+    .withIndex("by_game_real_time", (q) => q.eq("gameId", gameId))
+    .order(orderIncreasing ? "asc" : "desc")
+    .collect();
 };
 
-export const getPlayers = async (db: DatabaseReader, gameId: Id<"games">): Promise<Player[]> => {
-  let players: Player[] = await db
+export const getPlayers = async (
+  db: DatabaseReader,
+  gameId: Id<"games">
+): Promise<Doc<"players">[]> => {
+  return await db
     .query("players")
-    .filter(
-      q => q.eq(q.field("gameId"), gameId)
-    ).collect();
-  players.sort((a, b) => (a.index > b.index ? 1 : -1));
-  return players;
-}
+    .withIndex("by_index", (q) => q.eq("gameId", gameId))
+    .order("asc")
+    .collect();
+};
 
-export const getRelativeTime = (game: InternalGameState, currentRealTime: number) => {
+export const getRelativeTime = (
+  game: Doc<"games">,
+  currentRealTime: number
+) => {
   const realDuration = currentRealTime - game.latestRealTime;
-  const relativeDuration = game.timeFlow === TimeFlow.Forward ? realDuration : -1 * realDuration;
+  const relativeDuration =
+    game.timeFlow === TimeFlow.Forward ? realDuration : -1 * realDuration;
   return game.latestRelativeTime + relativeDuration;
 };
 
-export const getRealTime = (game: InternalGameState, relativeTime: number) => {
+export const getRealTime = (game: Doc<"games">, relativeTime: number) => {
   const duration = Math.abs(relativeTime - game.latestRelativeTime);
   return game.latestRealTime + duration;
-}
+};
 
 const reverseOperation = (op: Operation): Operation => {
   switch (op) {
@@ -529,58 +610,88 @@ const reverseOperation = (op: Operation): Operation => {
     default:
       return op;
   }
-}
+};
 
 export const getGameState = async (
   db: DatabaseReader,
-  game: InternalGameState,
+  game: Doc<"games">,
+  scheduler: Scheduler | null
 ): Promise<[GameState, number] | null> => {
   const players = await getPlayers(db, game._id);
   const moves = await getMovesRealTime(db, game._id, true);
   if (moves.length === 0) {
     throw Error("game has no moves");
   }
-  const maxMoveRealTime = moves[moves.length-1].realTime;
+  const maxMoveRealTime = moves[moves.length - 1].realTime;
   const config = getConfig(game.level);
   players[0].formerX = config.playerStartX;
   players[0].formerY = config.playerStartY;
 
   const relativeTime = getRelativeTime(game, maxMoveRealTime);
   const forward = game.timeFlow === TimeFlow.Forward;
-  const nextMoves = await getMoves(db, game._id, relativeTime, !forward, false, forward);
-  const nextTime = (nextMoves.length === 0 ? null : getRealTime(game, nextMoves[0].millisSinceStart));
-  const gameState = computeGameState(game, players, moves, nextTime);
+  const nextMoves = await getMoves(
+    db,
+    game._id,
+    relativeTime,
+    !forward,
+    false,
+    forward
+  );
+  if (scheduler && nextMoves.length > 0) {
+    const nextTime = getRealTime(game, nextMoves[0].millisSinceStart);
+    await scheduler.runAt(nextTime, internal.bumpGameState.default, {
+      gameId: game._id,
+    });
+  }
+  const gameState = computeGameState(game, players, moves);
   if (!gameState) {
     return null;
   }
-  return [gameState, Math.max((new Date()).getTime(), maxMoveRealTime)];
+  return [gameState, Math.max(new Date().getTime(), maxMoveRealTime)];
 };
 
 export const bumpGameState = async (
   db: DatabaseWriter,
-  game: InternalGameState,
+  game: Doc<"games">,
+  scheduler: Scheduler
 ) => {
   const realMoves = await getMovesRealTime(db, game._id, false);
-  const maxRealTimeMovePlayed = realMoves.length === 0 ? 0 : realMoves[0].realTime;
-  const currentTime = Math.max((new Date()).getTime(), maxRealTimeMovePlayed);
+  const maxRealTimeMovePlayed =
+    realMoves.length === 0 ? 0 : realMoves[0].realTime;
+  const currentTime = Math.max(new Date().getTime(), maxRealTimeMovePlayed);
   const relativeTime = getRelativeTime(game, maxRealTimeMovePlayed);
   const forward = game.timeFlow === TimeFlow.Forward;
   const players = await getPlayers(db, game._id);
-  const nextMoves = await getMoves(db, game._id, relativeTime, !forward, false, forward);
+  const nextMoves = await getMoves(
+    db,
+    game._id,
+    relativeTime,
+    !forward,
+    false,
+    forward
+  );
   for (let nextMove of nextMoves) {
     const expectedRealTime = getRealTime(game, nextMove.millisSinceStart);
-    const operation = (players[nextMove.playerIndex].timeFlow === game.timeFlow ?
-      nextMove.operation : reverseOperation(nextMove.operation));
-    if (expectedRealTime <= currentTime) {
-      console.log(`materializing non-user-action move for ${nextMove.playerIndex} operation ${operation} relative time ${nextMove.millisSinceStart}`);
-      db.insert("moves", {
-        gameId: nextMove.gameId,
-        playerIndex: nextMove.playerIndex,
-        millisSinceStart: nextMove.millisSinceStart,
-        operation,
-        realTime: expectedRealTime,
-        userAction: false,
+    const operation =
+      players[nextMove.playerIndex].timeFlow === game.timeFlow
+        ? nextMove.operation
+        : reverseOperation(nextMove.operation);
+    if (expectedRealTime > currentTime) {
+      await scheduler.runAt(expectedRealTime, internal.bumpGameState.default, {
+        gameId: game._id,
       });
+      break;
     }
+    console.log(
+      `materializing non-user-action move for ${nextMove.playerIndex} operation ${operation} relative time ${nextMove.millisSinceStart}`
+    );
+    await db.insert("moves", {
+      gameId: nextMove.gameId,
+      playerIndex: nextMove.playerIndex,
+      millisSinceStart: nextMove.millisSinceStart,
+      operation,
+      realTime: expectedRealTime,
+      userAction: false,
+    });
   }
 };

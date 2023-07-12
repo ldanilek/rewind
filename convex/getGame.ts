@@ -1,5 +1,5 @@
 import { query } from "./_generated/server";
-import { GameState, getGame, getGameState, getPlayers, getRelativeTime, getUser, InternalGameState, PlayerMove } from "../common";
+import { GameState, getGame, getGameState, getUser } from "../common";
 
 // Returns the GameState to render and the next timestamp where something will happen.
 export default query(async ({ db, auth }): Promise<GameState | null> => {
@@ -9,7 +9,7 @@ export default query(async ({ db, auth }): Promise<GameState | null> => {
   if (!game) {
     return null;
   }
-  const state = await getGameState(db, game);
+  const state = await getGameState(db, game, null);
   if (state === null) {
     return null;
   }

@@ -25,7 +25,7 @@ export default mutation(async ({ db, auth }): Promise<Id<"users">> => {
   // Check if we've already stored this identity before.
   const user = await db
     .query("users")
-    .filter(q => q.eq(q.field("tokenIdentifier"), identity.tokenIdentifier))
+    .withIndex("by_token", q => q.eq("tokenIdentifier", identity.tokenIdentifier))
     .first();
   if (user !== null) {
     // If we've seen this identity before but the name has changed, update the value.
@@ -36,7 +36,7 @@ export default mutation(async ({ db, auth }): Promise<Id<"users">> => {
     return user._id;
   }
   // If it's a new identity, create a new `User`.
-  return db.insert("users", {
+  return await db.insert("users", {
     name: identity.name!,
     tokenIdentifier: identity.tokenIdentifier,
     // The `_id` field will be assigned by the backend.
